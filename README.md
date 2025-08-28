@@ -54,6 +54,6 @@ Ruta base de scripts:
 
 -  `0.6_Downstream_Analysis_EC/`  →  Downstream específico de EC: DEGs entre tratamientos, utilidades de zonación para EC.
   
--  0.7_Traicing/   →  Trazabilidad y union con análisis de las muestras sin enriquecer
+-  `0.7_Traicing/`   →  Trazabilidad y union con análisis de las muestras sin enriquecer
 
-Cada subcarpeta incluye *_Exe.sh para facilitar la ejecución por lotes en el clúster y 0.0_Paths.R (o equivalente) para centralizar rutas.
+Cada subcarpeta incluye `*_Exe.sh` para facilitar la ejecución por lotes en el clúster y `0.0_Paths.R` para centralizar rutas.
