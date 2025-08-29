@@ -92,40 +92,45 @@ Cada subcarpeta incluye `*_Exe.sh` para facilitar la ejecución por lotes en el 
 
 -  `3.Annotations_Layer.Rmd`
   
-        -  **Qué hace**: carga `SubsetEndothelial_Harmony.rds`, define capas de anotación (Layer1–Layer5), genera DimPlots, DotPlots y Heatmaps de canonical markers; explora subclustering de un cluster concreto y compara proporciones CHOP vs vehicle por Layer.
-        -  **Input**: `SubsetEndothelial_Harmony.rds`
-        -  **Output**: `SubsetEndothelial_Harmony_Annotated.rds` + PNGs en `9.Annotations_Layer/`
+      -  **Qué hace**: carga `SubsetEndothelial_Harmony.rds`, define capas de anotación (Layer1–Layer5), genera DimPlots, DotPlots y Heatmaps de canonical markers; explora subclustering de un cluster concreto y compara proporciones CHOP vs vehicle por Layer.
+      -  **Input**: `SubsetEndothelial_Harmony.rds`
+      -  **Output**: `SubsetEndothelial_Harmony_Annotated.rds` + PNGs en `9.Annotations_Layer/`
 
 -  `4.GO_Terms_AnnotationLayer5.R`
   
-        -  **Qué hace**: para cada subpoblación de Layer5: DEGs “vs resto” y GO:BP (genes up, padj<0.05). Exporta Excel por subpoblación y barplots.
-        -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
-        -  **Output**: `10.Results_GO_AnnotationLayer/GO_Results_AnnotationLayer5.xlsx` + figuras
+      -  **Qué hace**: para cada subpoblación de Layer5: DEGs “vs resto” y GO:BP (genes up, padj<0.05). Exporta Excel por subpoblación y barplots.
+      -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
+      -  **Output**: `10.Results_GO_AnnotationLayer/GO_Results_AnnotationLayer5.xlsx` + figuras
 
 -  `5.RRVGO_AnnotationLayer.R`
-        -  **Qué hace**: agrupa GO por similitud semántica (rrvgo/GOSemSim), crea categorías funcionales y macro-categorías (mapeo manual), y resume por subpoblación (barras absolutas y proporciones).
-        -  **Input**: resultados del paso 4
-        -  **Output**: `11.Analysis_GO_AnnotationLayer/` (treemaps/scatter, tablas, barplots)
+  
+      -  **Qué hace**: agrupa GO por similitud semántica (rrvgo/GOSemSim), crea categorías funcionales y macro-categorías (mapeo manual), y resume por subpoblación (barras absolutas y proporciones).
+      -  **Input**: resultados del paso 4
+      -  **Output**: `11.Analysis_GO_AnnotationLayer/` (treemaps/scatter, tablas, barplots)
 
 -  `6.subpop_DEGs_CHOPvsVehicle_layers1-5_GO_UpSet_corr.R`
-        -  **Qué hace**: para cada Layer (1–5) y sus subpoblaciones, calcula DEGs CHOP vs vehicle; resume #Up/#Down, proporciones, GO Up por subpoblación, UpSet de DEGs Up compartidos y correlaciones entre DEGs globales y DEGs de subpoblación (identifica qué subpoblación “conduce” el efecto).
-        -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds` + `DEGs_CHOP_vs_vehicle.xlsx`
-        -  **Output**: `12.DEGs_CHOP_vs_vehicle/` (Excels de DEGs por Layer, barplots, GO Up, UpSet, matrices de correlación)
+  
+      -  **Qué hace**: para cada Layer (1–5) y sus subpoblaciones, calcula DEGs CHOP vs vehicle; resume #Up/#Down, proporciones, GO Up por subpoblación, UpSet de DEGs Up compartidos y correlaciones entre DEGs globales y DEGs de subpoblación (identifica qué subpoblación “conduce” el efecto).
+      -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds` + `DEGs_CHOP_vs_vehicle.xlsx`
+      -  **Output**: `12.DEGs_CHOP_vs_vehicle/` (Excels de DEGs por Layer, barplots, GO Up, UpSet, matrices de correlación)
 
 -  `7.Markers_GO_HeatMaps_AL5.R`
-        -  **Qué hace**: a partir de los GO más informativos (del paso 4–5), define firmas génicas por subpoblación de Layer5 (LVEC, LSEC_1…LSEC_5) y genera ModuleScores, DotPlots y Heatmaps (vertical y horizontal) con AverageExpression.
-        -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
-        -  **Output**: PNGs de DotPlots y Heatmaps por AL5
+  
+      -  **Qué hace**: a partir de los GO más informativos (del paso 4–5), define firmas génicas por subpoblación de Layer5 (LVEC, LSEC_1…LSEC_5) y genera ModuleScores, DotPlots y Heatmaps (vertical y horizontal) con AverageExpression.
+      -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
+      -  **Output**: PNGs de DotPlots y Heatmaps por AL5
 
 -  `8.Propeller.R`
-        -  **Qué hace**: con `speckle::propeller` estima cambios de composición CHOP vs vehicle por Layer5; guarda heatmap de PropMean (con p-values/FDR) y barplots (medias y log2FC).
-        -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
-        -  **Output**: `Res_Propeller.rds`, `Heatmap_PropMean_ByPheno_ByCt.pdf`, barras PNG
+  
+      -  **Qué hace**: con `speckle::propeller` estima cambios de composición CHOP vs vehicle por Layer5; guarda heatmap de PropMean (con p-values/FDR) y barplots (medias y log2FC).
+      -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
+      -  **Output**: `Res_Propeller.rds`, `Heatmap_PropMean_ByPheno_ByCt.pdf`, barras PNG
 
 -  `9.Senescence_Markers.R`
-        -  **Qué hace**: puntúa senescencia/SASP/p53 con AUCell (y firmas de msigdbr), genera FeaturePlots, DimPlots binarios, violines y barras de proporciones por Layer/condición.
-        -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
-        -  **Output**: PNGs (UMAP, violines, barras), columnas AUC_* añadidas al objeto
+  
+      -  **Qué hace**: puntúa senescencia/SASP/p53 con AUCell (y firmas de msigdbr), genera FeaturePlots, DimPlots binarios, violines y barras de proporciones por Layer/condición.
+      -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
+      -  **Output**: PNGs (UMAP, violines, barras), columnas AUC_* añadidas al objeto
 
 
 
