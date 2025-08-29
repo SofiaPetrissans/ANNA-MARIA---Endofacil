@@ -1,0 +1,563 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-08-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+## Propósito. 
+Añadir capas alternativas de anotación para el subconjunto endotelial (LSEC, LVEC, zonas periportal/midzonal/pericentral/central vein), con **DimPlots**, **DotPlots** de marcadores canónicos y **Heatmaps** (ComplexHeatmap) de expresión promedio. También se generan **barplots de composición** (CHOP vs vehicle) por cada capa.
+
+## Entrada.
+**SubsetEndothelial_Harmony.rds** (objeto Seurat integrado con Harmony y UMAP).
+Esto se descargo del **cluster** ("/ijc/LABS/GRAUPERA/RAW/.../ANNA_MARIA/3.MERGE/0.4_SubsetEndothelial/mt15/9.RemoveCluster/2.Integration/SubsetEndothelial_Harmony.rds")
+
+## Asume metadata:
+  -  Phenotype --> {CHOP, vehicle}
+  -  Harmony_Log_res.0.3 (clusters base)
+  -  Grafo: Harmony_Log (para FindSubCluster).
+
+## Salidas.
+Carpeta: **3.Annotations_Layer/** con:
+  -  DimPlot_* por capa.
+  -  CanonicalMarkers_DotPlot_* por capa.
+  -  Markers_Heatmap_* (vertical/horizontal) por capa.
+  -  Barplots de composición: Barplot_Percent_By_Phenotype_*.
+  -  Objeto anotado: SubsetEndothelial_Harmony_Annotated.rds.
+
+
+# ================================
+# 1) LIBRERIAS
+# ================================
+```{r}
+library(Seurat)
+library(ggplot2)
+library(ComplexHeatmap)
+library(dplyr)
+library(tidyr)
+library(circlize)
+library(stringr)
+library(tibble)
+library(tidyverse)
+library(RColorBrewer)
+library(purrr)
+```
+
+
+# ================================
+# 2) PARÁMETROS / RUTAS
+# ================================
+```{r}
+# Directorio
+directory <- "/Users/graupera_lab/Library/CloudStorage/OneDrive-JosepCarrerasLeukaemiaResearchInstitute(IJC)/ANNA_MARIA"
+setwd(directory)
+
+output_dir.base <- file.path("3.Annotations_Layer")
+dir.create(output_dir.base, recursive = TRUE, showWarnings = FALSE)
+input_rds <- file.path("SubsetEndothelial_Harmony.rds")
+```
+
+# ================================
+# 3) LECTURA SEURAT OBJECT 
+# ================================
+```{r}
+seurat_object <- readRDS(input_rds)
+```
+
+# ================================
+# 4) Funciones (reusar en todas las capas)
+# ================================
+```{r}
+# Escalado por gen (fila)
+scale_rows <- function(x) {
+  mat <- t(scale(t(x)))
+  mat[is.na(mat)] <- 0
+  mat
+}
+
+# DotPlot por categorías de genes (faceteado por categoría)
+make_dotplot_by_categories <- function(seu, layer_name, gene_sets, out_prefix, palette = NULL, width = 10, height = 3.5) {
+  features <- unique(unlist(gene_sets))
+  seu <- SetIdent(seu, value = layer_name)
+
+  gene_category_df <- bind_rows(lapply(names(gene_sets), function(cat) {
+    data.frame(Feature = gene_sets[[cat]], Category = cat)
+  }))
+  dp_data <- DotPlot(seu, features = gene_category_df$Feature)$data %>%
+    left_join(gene_category_df, by = c("features.plot" = "Feature"))
+
+  dp <- ggplot(dp_data, aes(x = features.plot, y = id, size = pct.exp, color = avg.exp.scaled)) +
+    geom_point() +
+    scale_color_gradient(low = "grey90", high = "#3C2692") +
+    facet_wrap(~Category, scales = "free_x", nrow = 1) +
+    theme_bw() +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 8),
+          axis.text.y = element_text(size = 8),
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.text = element_text(size = 12, face = "bold")) +
+    labs(x = "Features", y = "Identity", size = "Percent Expressed", color = "Average Expression") +
+    theme(plot.margin = unit(c(10, 10, 10, 10), "pt"))
+
+  ggsave(file.path(output_dir, paste0("CanonicalMarkers_DotPlot_", out_prefix, ".png")), dp, width = width, height = height)
+}
+
+# Heatmap (genes por filas) + opción horizontal (genes por columnas)
+make_heatmaps_by_categories <- function(seu, layer_name, gene_sets, colors, out_prefix,
+                                        do_vertical = TRUE, do_horizontal = TRUE,
+                                        base_width_v = 1100, base_height_v = 1800,
+                                        base_width_h = 2000, base_height_h = 600, res = 300) {
+  marker_genes <- unlist(gene_sets, use.names = FALSE)
+  avg.exp <- AverageExpression(seu, group.by = layer_name, return.seurat = FALSE)
+
+  genes_disponibles <- intersect(marker_genes, rownames(avg.exp$RNA))
+  if (length(genes_disponibles) == 0) {
+    warning("Ninguno de los genes de marker_genes está en el objeto. Saltando heatmaps de: ", out_prefix)
+    return(invisible(NULL))
+  }
+
+  mat <- avg.exp$RNA[genes_disponibles, , drop = FALSE]
+  mat_s <- scale_rows(mat)
+
+  gene.groups <- data.frame(
+    Categoria = rep(names(gene_sets), times = map_int(gene_sets, length))
+  )
+  rownames(gene.groups) <- make.unique(marker_genes)
+  gene.groups <- gene.groups[rownames(mat_s), , drop = FALSE]
+
+  col_fun <- colorRamp2(
+    c(min(mat_s), 0, max(mat_s)),
+    c("#1874CD", "#EEEEE0", "#CD2626")
+  )
+
+  # Vertical (genes en filas)
+  if (do_vertical) {
+    left_annotation <- rowAnnotation(
+      Categoria = gene.groups$Categoria,
+      col = list(Categoria = colors),
+      show_annotation_name = FALSE,
+      annotation_legend_param = list(title = "Categorias",
+                                     title_gp = gpar(fontsize = 8, fontface = "bold"),
+                                     labels_gp = gpar(fontsize = 7))
+    )
+
+    hm_v <- Heatmap(
+      mat_s,
+      name = "Scaled Expression",
+      col = col_fun,
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      show_row_names = TRUE,
+      show_column_names = TRUE,
+      row_names_gp = gpar(fontsize = 7),
+      column_names_gp = gpar(fontsize = 9),
+      heatmap_legend_param = list(title = "Scaled Expression",
+                                  title_gp = gpar(fontsize = 8, fontface = "bold"),
+                                  labels_gp = gpar(fontsize = 6)),
+      left_annotation = left_annotation,
+      border = TRUE,
+      column_title = paste("Canonical Markers by", layer_name),
+      column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+      row_split = gene.groups$Categoria,
+      gap = unit(1, "mm")
+    )
+
+    png(file.path(output_dir, paste0("Markers_Heatmap_", out_prefix, ".png")),
+        width = base_width_v, height = base_height_v, res = res)
+    draw(hm_v, heatmap_legend_side = "right", padding = unit(c(10, 20, 2, 2), "mm"))
+    dev.off()
+  }
+
+  # Horizontal (genes en columnas)
+  if (do_horizontal) {
+    mat_th <- t(mat_s)
+    gene_categories_vector <- gene.groups$Categoria
+
+    top_annotation <- HeatmapAnnotation(
+      Categorias = gene_categories_vector,
+      col = list(Categorias = colors),
+      annotation_legend_param = list(title = "Categorias",
+                                     title_gp = gpar(fontsize = 8, fontface = "bold"),
+                                     labels_gp = gpar(fontsize = 7))
+    )
+
+    hm_h <- Heatmap(
+      mat_th,
+      name = "Scaled Expression",
+      col = col_fun,
+      cluster_rows = FALSE,
+      cluster_columns = FALSE,
+      show_row_names = TRUE,
+      show_column_names = TRUE,
+      row_names_gp = gpar(fontsize = 8, fontface = "bold"),
+      column_names_gp = gpar(fontsize = 7),
+      heatmap_legend_param = list(title = "Scaled Expression",
+                                  title_gp = gpar(fontsize = 8, fontface = "bold"),
+                                  labels_gp = gpar(fontsize = 6)),
+      top_annotation = top_annotation,
+      border = TRUE,
+      column_title = paste("Canonical Markers by", layer_name),
+      column_title_gp = gpar(fontsize = 10, fontface = "bold"),
+      column_split = gene_categories_vector,
+      gap = unit(1, "mm")
+    )
+
+    png(file.path(output_dir, paste0("Markers_Heatmap_Horizontal_", out_prefix, ".png")),
+        width = base_width_h, height = base_height_h, res = res)
+    draw(hm_h, heatmap_legend_side = "right", padding = unit(c(10, 2, 2, 2), "mm"))
+    dev.off()
+  }
+}
+
+# Paleta para subclústeres (cuando no hay colores predefinidos)
+getPalette <- colorRampPalette(brewer.pal(9, "Set3"))
+generateClusterColors <- function(object, group_col) {
+  lv <- levels(factor(object@meta.data[[group_col]]))
+  cols <- getPalette(length(lv))
+  names(cols) <- lv
+  cols
+}
+
+# Barplot de composición por Phenotype
+plot_composition_by_layer <- function(seu, layer, palette, out_suffix) {
+  pal <- palette; stopifnot(!is.null(names(pal)))
+
+  df <- seu@meta.data %>%
+    dplyr::count(Phenotype, !!rlang::sym(layer), name = "n") %>%
+    tidyr::complete(Phenotype, !!rlang::sym(layer), fill = list(n = 0)) %>%
+    group_by(Phenotype) %>%
+    mutate(Proportion = n / sum(n) * 100) %>%
+    ungroup()
+
+  df$Phenotype <- factor(df$Phenotype, levels = c("CHOP", "vehicle"))
+  df[[layer]]  <- factor(df[[layer]], levels = names(pal))
+
+  # Vertical
+  p_v <- ggplot(df, aes(x = Phenotype, y = Proportion, fill = .data[[layer]])) +
+    geom_col(position = "stack") +
+    scale_fill_manual(values = pal, name = "Cell type") +
+    scale_y_continuous(labels = function(x) paste0(x, "%")) +
+    labs(x = "Condition", y = "Percentage of cells",
+         title = paste("Composition by", layer)) +
+    theme_minimal(base_size = 11)
+  ggsave(file.path(output_dir, paste0("Barplot_Percent_By_Phenotype_", out_suffix, ".png")),
+         p_v, width = 4, height = 5, dpi = 300)
+
+  # Horizontal
+  p_h <- ggplot(df, aes(x = Proportion, y = Phenotype, fill = .data[[layer]])) +
+    geom_col(width = 0.7) +
+    scale_fill_manual(values = pal, name = "Cell type") +
+    scale_x_continuous(limits = c(0, 100), expand = c(0,0),
+                       labels = function(x) paste0(x, "%")) +
+    labs(x = "Percentage of cells", y = "Condition",
+         title = paste("Composition by", layer)) +
+    theme_bw(base_size = 11)
+  ggsave(file.path(output_dir, paste0("Barplot_Percent_By_Phenotype_", out_suffix, "_H.png")),
+         p_h, width = 6, height = 3, dpi = 300)
+}
+
+```
+
+# --------------------------------------------------------------------------------
+# 5) Subclustering del cluster 0 (Harmony_Log_res.0.3)
+# --------------------------------------------------------------------------------
+```{r}
+output_dir <- file.path(output_dir.base, "SubsetCluster_0_Harmony_res.0.3")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+seurat_object <- SetIdent(seurat_object, value = "Harmony_Log_res.0.3")
+seurat_object <- FindSubCluster(
+  object = seurat_object,
+  cluster = "0",
+  graph.name = "Harmony_Log",
+  subcluster.name = "SubCluster_0",
+  resolution = 0.2,
+  algorithm = 1
+)
+
+cols_sub <- generateClusterColors(seurat_object, "SubCluster_0")
+DimPlot(seurat_object, reduction = "umap", group.by = "SubCluster_0", label = TRUE,
+        pt.size = 1, raster = FALSE, cols = cols_sub) & NoAxes()
+ggsave(file.path(output_dir, "DimPlot_SubCluster_0_res0.2.png"), width = 7, height = 7)
+
+DimPlot(seurat_object, reduction = "umap", group.by = "SubCluster_0", split.by = "Phenotype", label = TRUE,
+        pt.size = 1, raster = FALSE, cols = cols_sub) & NoAxes()
+ggsave(file.path(output_dir, "DimPlot_SubCluster_0_res0.2_Phenotype.png"), width = 14, height = 7)
+
+```
+
+
+
+# ================================
+# 6) ANOTACIONES
+# ================================
+# --------------------------------------------------------------------------------
+# ANNOTATION_LAYER_1
+# --------------------------------------------------------------------------------
+  -  Central Vein
+  -  LSEC
+```{r}
+output_dir <- file.path(output_dir.base, "Annotation_Layer1")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+RESOLUTION <- "Harmony_Log_res.0.3"
+seurat_object <- SetIdent(seurat_object, value = RESOLUTION)
+
+cluster_names_L1 <- c(
+  "0" = "LSEC",
+  "1" = "LSEC",
+  "2" = "Central Vein",
+  "3" = "LSEC",
+  "4" = "LSEC"
+)
+
+Idents(seurat_object) <- RESOLUTION
+seurat_object@meta.data$Annotation_Layer1 <- factor(cluster_names_L1[as.character(Idents(seurat_object))])
+
+annotation.colors_1 <- c("Central Vein" = "#86D0B9", "LSEC" = "#CCEDB1")
+layer_name <- "Annotation_Layer1"
+
+# DimPlot
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name,
+        label = FALSE, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_1) +
+  NoAxes() + ggtitle("Cell Type")
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, ".png")), width = 7, height = 6)
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, split.by = "Phenotype",
+        label = FALSE, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_1) +
+  NoAxes() + ggtitle("Cell Type")
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, "_Phenotype.png")), width = 13, height = 6)
+
+
+# Marcadores canónicos
+gene_sets_L1 <- list(
+  "Central Vein" = c("Selp","Thbd","Ramp3","Wnt9b","Lhx6","Rspo3"),
+  "LSEC"         = c("Stab2","Bmp2","Lyve1","Cyp4b1","Cd32b","Flt4","Cd31")
+)
+
+# DotPlot y Heatmaps
+make_dotplot_by_categories(seurat_object, layer_name, gene_sets_L1, out_prefix = layer_name)
+make_heatmaps_by_categories(seurat_object, layer_name, gene_sets_L1, colors = annotation.colors_1, out_prefix = layer_name)
+
+```
+
+
+# --------------------------------------------------------------------------------
+# ANNOTATION_LAYER_2
+# --------------------------------------------------------------------------------
+  -  Central Vein
+  -  Periportal
+  -  Midzonal
+```{r}
+output_dir <- file.path(output_dir.base, "Annotation_Layer2")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+RESOLUTION <- "SubCluster_0"
+seurat_object <- SetIdent(seurat_object, value = RESOLUTION)
+
+cluster_names_L2 <- c(
+  "0_0" = "Periportal",
+  "0_1" = "Midzonal",
+  "1"   = "Periportal",
+  "2"   = "Central Vein",
+  "3"   = "Periportal",
+  "4"   = "Periportal"
+)
+
+seurat_object@meta.data$Annotation_Layer2 <- factor(cluster_names_L2[as.character(Idents(seurat_object))])
+annotation.colors_2 <- c("Central Vein"="#86D0B9","Periportal"="#5A8BB7","Midzonal"="#99C5E3")
+layer_name <- "Annotation_Layer2"
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name,
+        label = FALSE, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_2) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, ".png")), width = 7, height = 6)
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, split.by = "Phenotype",
+        label = FALSE, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_2) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, "_Phenotype.png")), width = 13, height = 6)
+
+
+gene_sets_L2 <- list(
+  "Periportal"   = c("Ephx1","Msr1","Dll4","Efnb2","Glul"),
+  "Midzonal"     = c("Aass","Ccnd1","Lyve1","Bok"),
+  "Central Vein" = c("Selp","Thbd","Ramp3","Wnt9b","Lhx6","Rspo3")
+)
+
+make_dotplot_by_categories(seurat_object, layer_name, gene_sets_L2, out_prefix = layer_name)
+make_heatmaps_by_categories(seurat_object, layer_name, gene_sets_L2, colors = annotation.colors_2, out_prefix = layer_name,
+                            base_width_v = 1200, base_height_v = 2000, base_width_h = 2200, base_height_h = 700)
+
+```
+
+
+# --------------------------------------------------------------------------------
+# ANNOTATION_LAYER_3
+# --------------------------------------------------------------------------------
+  -  Central Vein
+  -  LSEC1
+  -  LSEC2
+  -  LSEC3
+  -  LSEC4
+  -  LSEC5
+```{r}
+output_dir <- file.path(output_dir.base, "Annotation_Layer3")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+RESOLUTION <- "SubCluster_0"
+seurat_object <- SetIdent(seurat_object, value = RESOLUTION)
+
+cluster_names_L3 <- c(
+  "0_0" = "LSEC_1",
+  "0_1" = "LSEC_2",
+  "1"   = "LSEC_3",
+  "2"   = "Central Vein",
+  "3"   = "LSEC_4",
+  "4"   = "LSEC_5"
+)
+
+seurat_object@meta.data$Annotation_Layer3 <- factor(cluster_names_L3[as.character(Idents(seurat_object))])
+
+annotation.colors_3 <- c(
+  "Central Vein"="#86D0B9","LSEC_1"="#F4CDA5","LSEC_2"="#EBAFC3",
+  "LSEC_3"="#A8C8E5","LSEC_4"="#DCE6B6","LSEC_5"="#C5A7E1"
+)
+layer_name <- "Annotation_Layer3"
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_3) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, ".png")), width = 7, height = 6)
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, split.by = "Phenotype",
+        pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_3) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, "_Phenotype.png")), width = 13, height = 6)
+```
+  
+
+# --------------------------------------------------------------------------------
+# ANNOTATION_LAYER_4
+# --------------------------------------------------------------------------------
+  -  LVEC
+  -  LSEC
+```{r}
+output_dir <- file.path(output_dir.base, "Annotation_Layer4")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+RESOLUTION <- "Harmony_Log_res.0.3"
+seurat_object <- SetIdent(seurat_object, value = RESOLUTION)
+
+cluster_names_L4 <- c(
+  "0" = "LSEC",
+  "1" = "LSEC",
+  "2" = "LVEC",
+  "3" = "LSEC",
+  "4" = "LSEC"
+)
+
+seurat_object@meta.data$Annotation_Layer4 <- factor(cluster_names_L4[as.character(Idents(seurat_object))])
+annotation.colors_4 <- c("LVEC"="#86D0B9","LSEC"="#CCEDB1")
+layer_name <- "Annotation_Layer4"
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_4) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, ".png")), width = 7, height = 6)
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, split.by = "Phenotype",
+        pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_4) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, "_Phenotype.png")), width = 13, height = 6)
+
+gene_sets_L4 <- list(
+  "LVEC" = c("Cd200","Pecam1","Rgcc","Vwf","Cdh5","Selp","Gja4"),
+  "LSEC" = c("Stab2","Bmp2","Lyve1","Cyp4b1","Cd32b","Flt4","Cd31")
+)
+
+make_dotplot_by_categories(seurat_object, layer_name, gene_sets_L4, out_prefix = layer_name)
+make_heatmaps_by_categories(seurat_object, layer_name, gene_sets_L4, colors = annotation.colors_4, out_prefix = layer_name)
+```
+
+
+# --------------------------------------------------------------------------------
+# ANNOTATION_LAYER_5
+# --------------------------------------------------------------------------------
+  -  LVEC
+  -  LSEC1
+  -  LSEC2
+  -  LSEC3
+  -  LSEC4
+  -  LSEC5
+```{r}
+output_dir <- file.path(output_dir.base, "Annotation_Layer5")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+RESOLUTION <- "SubCluster_0"
+seurat_object <- SetIdent(seurat_object, value = RESOLUTION)
+
+cluster_names_L5 <- c(
+  "0_0" = "LSEC_1",
+  "0_1" = "LSEC_2",
+  "1"   = "LSEC_3",
+  "2"   = "LVEC",
+  "3"   = "LSEC_4",
+  "4"   = "LSEC_5"
+)
+
+seurat_object@meta.data$Annotation_Layer5 <- factor(cluster_names_L5[as.character(Idents(seurat_object))])
+annotation.colors_5 <- c(
+  "LVEC"="#86D0B9","LSEC_1"="#F4CDA5","LSEC_2"="#EBAFC3",
+  "LSEC_3"="#A8C8E5","LSEC_4"="#DCE6B6","LSEC_5"="#C5A7E1"
+)
+layer_name <- "Annotation_Layer5"
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_5) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, ".png")), width = 7, height = 6)
+
+DimPlot(seurat_object, reduction = "umap", group.by = layer_name, split.by = "Phenotype",
+        pt.size = 0.5, raster = FALSE) +
+  scale_color_manual(values = annotation.colors_5) + NoAxes()
+ggsave(file.path(output_dir, paste0("DimPlot_", layer_name, "_Phenotype.png")), width = 13, height = 6)
+```
+  
+  
+# ================================
+# 7) Composición CHOP vs vehicle por cada capa - BARPLOT
+# ================================
+```{r}
+output_dir <- file.path(output_dir.base, "BarPlots_Proportions")
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+annotation_layers <- c("Annotation_Layer1","Annotation_Layer2","Annotation_Layer3","Annotation_Layer4","Annotation_Layer5")
+annotation_colors_list <- list(
+  Annotation_Layer1 = annotation.colors_1,
+  Annotation_Layer2 = annotation.colors_2,
+  Annotation_Layer3 = annotation.colors_3,
+  Annotation_Layer4 = annotation.colors_4,
+  Annotation_Layer5 = annotation.colors_5
+)
+
+for (layer in annotation_layers) {
+  plot_composition_by_layer(seurat_object, layer, palette = annotation_colors_list[[layer]], out_suffix = layer)
+}
+```
+
+
+# ================================
+# 8) # GUARDAR SEURAT OBJECT CON ANOTACIONES
+# ================================
+```{r}
+saveRDS(seurat_object, file = file.path("SubsetEndothelial_Harmony_Annotated.rds"))
+```
+
+
+
+
+
