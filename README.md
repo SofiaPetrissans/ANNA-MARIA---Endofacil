@@ -80,21 +80,25 @@ Cada subcarpeta incluye `*_Exe.sh` para facilitar la ejecución por lotes en el 
 ### 🗄️ Estructura de carpetas 
 
 -  `1.GOTerms_mt15_merge.R`
+  
         -  **Qué hace**: enriquece GO:BP con clusterProfiler usando `DEGs_per_CellType_all_genes.xlsx` (todas las poblaciones, mt15). Exporta tres Excels (All/Up/Down) y barplots por población.
         -  **Input**: `DEGs_per_CellType_all_genes.xlsx`
         -  **Output**: `GO_BP_All_CellTypes.xlsx`, `GO_BP_Upregulated_CellTypes.xlsx`, `GO_BP_Downregulated_CellTypes.xlsx` + /Plots_…
 
 -  `2.GOTerms_mt15_Subset_EC_merge.R`
+  
         -  **Qué hace**: idem pero usando la lista de DEGs CHOP vs vehicle (una sola hoja) enfocada a EC. Exporta GO (All/Up/Down) y barplots.
         -  **Input**: `DEGs_CHOP_vs_vehicle.xlsx`
         -  **Output**: `GO_BP_All_Subset.xlsx`, `GO_BP_Up_Subset.xlsx`, `GO_BP_Down_Subset.xlsx` + /Plots_…
 
 -  `3.Annotations_Layer.Rmd`
+  
         -  **Qué hace**: carga `SubsetEndothelial_Harmony.rds`, define capas de anotación (Layer1–Layer5), genera DimPlots, DotPlots y Heatmaps de canonical markers; explora subclustering de un cluster concreto y compara proporciones CHOP vs vehicle por Layer.
         -  **Input**: `SubsetEndothelial_Harmony.rds`
         -  **Output**: `SubsetEndothelial_Harmony_Annotated.rds` + PNGs en `9.Annotations_Layer/`
 
 -  `4.GO_Terms_AnnotationLayer5.R`
+  
         -  **Qué hace**: para cada subpoblación de Layer5: DEGs “vs resto” y GO:BP (genes up, padj<0.05). Exporta Excel por subpoblación y barplots.
         -  **Input**: `SubsetEndothelial_Harmony_Annotated.rds`
         -  **Output**: `10.Results_GO_AnnotationLayer/GO_Results_AnnotationLayer5.xlsx` + figuras
